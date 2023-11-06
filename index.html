@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en" >
+<head>
+  <meta charset="UTF-8">
+  <title>TECHNO-GRAPH | RGB Cross</title>
+  <link rel="stylesheet" href="./style.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+</head>
+<body>
+<!-- partial:index.partial.html -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/89/three.min.js"></script>    
+  <div id="myCanvas"></div>
+  <div id="logo"><img src="assets/LOGO_bl.png" alt=""></div>
+  <div id="text">
+    <p id="volumeDisplay">VOLUME:</p>
+    <input type="range"  value="1" id="soundVolume" min="0" max="2" step="0.01">
+    <p id="lowDisplay">LOW:</p>
+    <p id="midDisplay">MID:</p>
+    <p id="highDisplay">HIGH:</p>
+  </div>
+  <div id="overlay">
+    <p>CLICK TO PLAY</p>
+  </div>
+
+
+  <script id="fragmentShader" type="x-shader/x-fragment">
+    varying vec2 vUv;
+    uniform vec2 u_resolution;
+    uniform vec2 u_mouse;
+    uniform float u_volume;
+    uniform float u_time;
+
+    uniform float u_Frequency_Low;
+    uniform float u_Frequency_Mid;
+    uniform float u_Frequency_High;
+    
+    float random(vec2 st) {
+        return fract(sin(dot(st.xy, vec2(12.9898, 78.233))) * 43758.5453123);
+    }
+    
+    float map(float value, float inputMin, float inputMax, float outputMin, float outputMax) {
+        return outputMin + ((value - inputMin) / (inputMax - inputMin)) * (outputMax - outputMin);
+    }
+    
+    vec3 calculateLight(vec2 uv, vec2 center, float u_volume, float blur, float time, float wave) {
+        float radius = u_volume * 0.03 + (center.x + center.y) * 0.01;
+        float r = u_volume;
+
+        // 波の動きを実装
+        float waveX = u_Frequency_High * 100.0 * sin(time + uv.y * 10.0) * wave;
+        float waveY = u_Frequency_High * 100.0 * cos(time + uv.x * 10.0) * wave;
+        uv += vec2(waveX, waveY);
+    
+        vec3 light = vec3(0.0);
+        for (int j = 0; j < 3; j++) {
+            for (int i = 0; i < 3; i++) {
+                float distanceX = abs(uv.x - center.x);
+                float distanceY = abs(uv.y - center.y);
+                float blurFactor = 1.0 - smoothstep(0.0, blur, distanceX) * smoothstep(0.0, blur, distanceY);
+                float rainbowEffect = 1.001;
+                light[j] += radius / abs(fract(float(r) - float(j * j) *  u_Frequency_Low) - length(uv - center)) * blurFactor;
+            }
+        }
+        return light;
+    }
+    
+    void main() {
+        vec2 imageResolution = vec2(1024.0, 1024.0);
+    
+        vec2 ratio = vec2(
+            min((u_resolution.x / u_resolution.y) / (imageResolution.x / imageResolution.y), 1.0),
+            min((u_resolution.y / u_resolution.x) / (imageResolution.y / imageResolution.x), 1.0)
+        );
+    
+        vec2 uv = vec2(
+            vUv.x * ratio.x + (1.0 - ratio.x) * 0.5,
+            vUv.y * ratio.y + (1.0 - ratio.y) * 0.5
+        );
+        vec2 fMosaicScal = vec2(16.0);
+        vec2 vScreenSize = vec2(u_resolution.x, u_resolution.y);
+    
+        float mapped_Volume = map(u_volume, 0.0, 1.0, 0.0, 1.0);
+        float mapped_Low = map(u_Frequency_Low, 0.0, 0.01, 0.0, 1.0);
+        float mapped_Mid = map(u_Frequency_Mid, 0.0, 0.01, 0.0, 1.0);
+        float mapped_High = map(u_Frequency_High, 0.0, 0.01, 0.0, 1.0);
+    
+
+      vec2 center = vec2(u_mouse.x, u_mouse.y);
+
+      if(random(vec2(mapped_Volume)) > 0.2){
+        fMosaicScal.x = random(uv + u_time) * mapped_Volume * 0.5 + 0.5;
+        fMosaicScal.y = random(uv*mapped_Volume) * 0.5 + 0.5;
+      }else if(random(vec2(mapped_Volume)) < 0.19){
+        fMosaicScal =vec2(16.0);
+      }
+
+        uv.x = floor(uv.x * vScreenSize.x / fMosaicScal.x) / (vScreenSize.x / fMosaicScal.x);
+        uv.y = floor(uv.y * vScreenSize.y / fMosaicScal.y) / (vScreenSize.y / fMosaicScal.y);
+
+        vec3 result = vec3(0.0);
+    
+        for (int i = 0; i < 3; i++) {
+            float noise = random(uv + vec2(mapped_High, u_time * 0.1)) * 0.5;
+
+            vec3 lightA = calculateLight(uv, center, mapped_Low, float(i) * mapped_Volume * mapped_Volume + 0.01, u_time * 0.01 + mapped_Low, 1.2);
+            vec3 lightB = calculateLight(uv, center, mapped_Mid, float(i) * mapped_Volume, u_time * 0.01 + mapped_Mid, 0.1);
+            vec3 lightC = calculateLight(uv, center, mapped_High, float(i) * mapped_Volume * 2.0, u_time * 0.01 + mapped_High, 0.5);
+
+            result = lightA + lightB + lightC;
+        }
+    
+        // Add a twist effect
+        uv += mapped_Low * vec2(cos(u_time * 0.5 + vUv.y * 10.0), sin(u_time * 0.5 + vUv.x * 10.0));
+    
+        // Add distortion
+        uv += mapped_Low * vec2(sin(u_time * 0.3 + vUv.y * 5.0), cos(u_time * 0.3 + vUv.x * 5.0));
+    
+        result *= mapped_Mid * 0.5 + random(uv)*mapped_Volume * 0.5 + 0.5;
+        result.r *= mapped_Volume*0.4 * mapped_Low;
+        result.g *= mapped_Volume *0.4 * mapped_Low;
+        result.b *= mapped_Volume *2.0 * mapped_Low;
+    
+        gl_FragColor = vec4(result - random(vec2(uv.x+u_time))*0.99 , 1.0);
+    }
+    
+    
+  </script>
+  
+  <script id="vertexShader" type="x-shader/x-vertex">  
+    varying vec2 vUv;
+    void main() {
+      vUv = uv;// uv: ShaderMaterialで補完される vec2 型(xy)の変数。テクスチャ座標のこと。
+      gl_Position = vec4( position, 1.0 );
+    }
+  </script>
+
+  <script  src="./script.js"></script>
+
+</body>
+</html>
